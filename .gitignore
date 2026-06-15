@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# LangGraph dev cache
+.langgraph_api/
+
+# Secrets & runtime data
+.env
+data/
+
+# OS
+.DS_Store
