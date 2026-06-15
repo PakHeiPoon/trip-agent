@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.env
+data/
+tests/
+.pytest_cache/
+.langgraph_api/
+README.md
+deploy.sh
