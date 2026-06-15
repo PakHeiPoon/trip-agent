@@ -83,18 +83,23 @@ def _run_specialist(name: str, history: list, ask: HumanMessage) -> str:
     POI / weather); tool-less ones are a plain LLM call."""
     system = SPECIALIST_PROMPTS[name]
     tools = SPECIALIST_TOOLS.get(name, [])
-    if tools:
-        sub = create_react_agent(get_llm(reasoning_effort="low"), tools, prompt=system)
-        out = sub.invoke(
-            {"messages": [*history, ask]}, config={"run_name": f"expert:{name}"}
-        )
-        return _text(out["messages"][-1])
+    try:
+        if tools:
+            sub = create_react_agent(get_llm(reasoning_effort="low"), tools, prompt=system)
+            out = sub.invoke(
+                {"messages": [*history, ask]},
+                # cap the tool loop so a chatty react agent can't run away
+                config={"run_name": f"expert:{name}", "recursion_limit": 8},
+            )
+            return _text(out["messages"][-1])
 
-    resp = get_llm(reasoning_effort="low").invoke(
-        [SystemMessage(content=system), *history, ask],
-        config={"run_name": f"expert:{name}"},
-    )
-    return _text(resp)
+        resp = get_llm(reasoning_effort="low").invoke(
+            [SystemMessage(content=system), *history, ask],
+            config={"run_name": f"expert:{name}"},
+        )
+        return _text(resp)
+    except Exception as exc:  # noqa: BLE001 - degrade gracefully so finalize still answers
+        return f"（{name} 专家本轮未能给出建议：{type(exc).__name__}）"
 
 
 def _experts(state: AgentState) -> dict:

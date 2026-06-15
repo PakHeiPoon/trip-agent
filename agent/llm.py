@@ -75,4 +75,7 @@ def get_llm(
         temperature=temperature,
         max_tokens=max_tokens,
         reasoning_effort=effort,
+        # Bounded per-call latency so one slow vivo call can't stall the whole flow.
+        timeout=float(os.getenv("VIVO_TIMEOUT", "45")),
+        max_retries=int(os.getenv("VIVO_MAX_RETRIES", "1")),
     )

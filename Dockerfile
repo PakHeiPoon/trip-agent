@@ -5,8 +5,10 @@ WORKDIR /app
 # uv for fast, reproducible installs
 RUN pip install --no-cache-dir uv
 
-# Copy project (deps + source) and install with the optional HTTP server extra
+# 1) deps only (cached layer — unchanged unless pyproject/uv.lock change)
 COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --extra server --no-dev --no-install-project
+# 2) source + build the local package (fast; re-runs only when source changes)
 COPY agent ./agent
 COPY prompts ./prompts
 COPY server.py ./

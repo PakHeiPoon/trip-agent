@@ -53,7 +53,9 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/api/chat")
-async def chat(req: ChatRequest) -> ChatResponse:
+def chat(req: ChatRequest) -> ChatResponse:
+    # NOTE: sync def on purpose — graph.invoke() is blocking, so FastAPI runs this
+    # in a threadpool and the event loop (incl. /health) stays responsive.
     sid = req.session_id or str(uuid.uuid4())
 
     content = req.message
