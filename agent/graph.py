@@ -65,7 +65,7 @@ def _text(message: Any) -> str:
 
 def _supervisor(state: AgentState) -> dict:
     """总控：decide which specialists (if any) to consult this turn."""
-    router = get_llm(reasoning_effort="low").with_structured_output(RoutePlan)
+    router = get_llm(reasoning_effort="minimal").with_structured_output(RoutePlan)
     plan: RoutePlan = router.invoke(
         [SystemMessage(content=SUPERVISOR_PROMPT), *state["messages"]],
         config={"run_name": "supervisor"},
@@ -85,7 +85,7 @@ def _run_specialist(name: str, history: list, ask: HumanMessage) -> str:
     tools = SPECIALIST_TOOLS.get(name, [])
     try:
         if tools:
-            sub = create_react_agent(get_llm(reasoning_effort="low"), tools, prompt=system)
+            sub = create_react_agent(get_llm(reasoning_effort="minimal"), tools, prompt=system)
             out = sub.invoke(
                 {"messages": [*history, ask]},
                 # cap the tool loop so a chatty react agent can't run away
@@ -93,7 +93,7 @@ def _run_specialist(name: str, history: list, ask: HumanMessage) -> str:
             )
             return _text(out["messages"][-1])
 
-        resp = get_llm(reasoning_effort="low").invoke(
+        resp = get_llm(reasoning_effort="minimal").invoke(
             [SystemMessage(content=system), *history, ask],
             config={"run_name": f"expert:{name}"},
         )
@@ -108,6 +108,9 @@ def _experts(state: AgentState) -> dict:
     ask = HumanMessage(
         content="总控已将本轮任务指派给你。请基于以上对话，只就你负责的领域给出简洁、可执行的专业意见。"
     )
+    # Sequential on purpose: vivo's free competition tier throttles concurrent
+    # calls, so parallel experts end up SLOWER. Speed comes from reasoning_effort
+    # "minimal" on routing/experts instead.
     findings: list[dict[str, Any]] = [
         {"agent": name, "content": _run_specialist(name, history, ask)}
         for name in state.get("plan", [])
