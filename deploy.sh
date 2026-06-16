@@ -22,7 +22,7 @@ ssh "$HOST" "mkdir -p $APPDIR && test -f $APPDIR/.env" || {
   echo "Create it once with your secrets, then re-run. Example:"
   echo "  ssh $HOST 'cat > $APPDIR/.env' <<'EOF'"
   echo "  VIVO_API_KEY=sk-xuanji-..."
-  echo "  VIVO_APP_ID=2026413734"
+  echo "  VIVO_APP_ID=your_app_id"
   echo "  EOF"
   exit 1
 }
