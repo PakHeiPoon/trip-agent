@@ -1,33 +1,32 @@
 #!/usr/bin/env bash
 #
-# Deploy trip-agent to a remote server via Docker.
-# Run this FROM YOUR MAC (where `ssh achat-hk` works).
+# Deploy trip-agent to a remote server via Docker (rsync code -> remote build/run).
+# Run from a machine where `ssh $HOST` works.
 #
-#   ./deploy.sh
+#   HOST=your-server ./deploy.sh
 #
-# One-time prerequisite: create the env file on the server (see README / handoff).
-#
-# Override defaults with env vars, e.g.:  HOST=achat-hk PORT=8800 ./deploy.sh
+# One-time prerequisite: create $APPDIR/.env on the server with your secrets.
 
 set -euo pipefail
 
-HOST="${HOST:-achat-hk}"
+HOST="${HOST:?set HOST to your server's ssh host/alias, e.g. HOST=my-server}"
 PORT="${PORT:-8800}"
 APPDIR="${APPDIR:-/opt/trip-agent}"
+DOCKER="${DOCKER:-docker}"            # set DOCKER='sudo docker' if your user needs sudo
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-echo "==> [1/4] ensure app dir + env file on $HOST"
+echo "==> [1/4] ensure app dir + env file on \$HOST"
 ssh "$HOST" "mkdir -p $APPDIR && test -f $APPDIR/.env" || {
   echo "ERROR: $APPDIR/.env is missing on the server."
   echo "Create it once with your secrets, then re-run. Example:"
-  echo "  ssh $HOST 'cat > $APPDIR/.env' <<'EOF'"
+  echo "  ssh \$HOST 'cat > $APPDIR/.env' <<'EOF'"
   echo "  VIVO_API_KEY=sk-xuanji-..."
   echo "  VIVO_APP_ID=your_app_id"
   echo "  EOF"
   exit 1
 }
 
-echo "==> [2/4] sync code to $HOST:$APPDIR"
+echo "==> [2/4] sync code to server:$APPDIR"
 rsync -az --delete \
   --exclude='.venv' --exclude='__pycache__' --exclude='*.pyc' \
   --exclude='.git' --exclude='.env' --exclude='data' \
@@ -36,15 +35,16 @@ rsync -az --delete \
 
 echo "==> [3/4] build image + (re)start container on port $PORT"
 ssh "$HOST" "set -e; cd $APPDIR; \
-  docker build -t trip-agent . ; \
-  docker rm -f trip-agent 2>/dev/null || true ; \
-  docker run -d --name trip-agent --restart unless-stopped \
-    -p ${PORT}:8000 --env-file .env trip-agent ; \
-  sleep 4 ; docker ps --filter name=trip-agent --format '  {{.Names}}  {{.Status}}  {{.Ports}}'"
+  $DOCKER build -t trip-agent . ; \
+  $DOCKER rm -f trip-agent 2>/dev/null || true ; \
+  $DOCKER run -d --name trip-agent --restart unless-stopped \
+    -p ${PORT}:8000 --env-file .env \
+    -v ${APPDIR}/data:/app/data \
+    trip-agent ; \
+  sleep 4 ; $DOCKER ps --filter name=trip-agent --format '  {{.Names}}  {{.Status}}  {{.Ports}}'"
 
 echo "==> [4/4] health check"
-ssh "$HOST" "curl -sf http://127.0.0.1:${PORT}/health && echo '  <- OK' || echo '  (not ready, check: docker logs trip-agent)'"
+ssh "$HOST" "curl -sf http://127.0.0.1:${PORT}/health && echo '  <- OK' || echo '  (not ready, check: $DOCKER logs trip-agent)'"
 
 echo ""
-echo "Done. Public URL:  http://124.156.170.240:${PORT}"
-echo "Test:  curl -X POST http://124.156.170.240:${PORT}/api/chat -H 'Content-Type: application/json' -d '{\"message\":\"你好\"}'"
+echo "Done. Service listening on port ${PORT} of your server."

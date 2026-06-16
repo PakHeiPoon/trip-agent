@@ -18,10 +18,13 @@ Tools are mocked for 初赛 — specialists reason from the conversation. The
 
 from __future__ import annotations
 
+import os
+import sqlite3
+from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import create_react_agent
 from pydantic import BaseModel, Field
@@ -146,8 +149,24 @@ def build_graph(checkpointer=None):
     return builder.compile(checkpointer=checkpointer)
 
 
-# Standalone use (FastAPI /api/chat): in-memory persistence.
-graph = build_graph(checkpointer=MemorySaver())
+def _make_checkpointer() -> SqliteSaver:
+    """Durable SQLite checkpointer for the FastAPI path.
+
+    Per-thread (= session_id) conversation history persists across restarts /
+    redeploys. In Docker the DB file must sit on a mounted volume (see deploy.sh:
+    `-v .../data:/app/data`) so it survives container recreation.
+    """
+    db_path = Path(os.getenv("CHECKPOINT_DB", "data/checkpoints.sqlite"))
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")  # better concurrency under the threadpool
+    saver = SqliteSaver(conn)
+    saver.setup()
+    return saver
+
+
+# Standalone use (FastAPI /api/chat): durable per-session persistence.
+graph = build_graph(checkpointer=_make_checkpointer())
 
 
 def make_graph():
