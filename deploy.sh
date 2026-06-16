@@ -11,9 +11,10 @@
 
 set -euo pipefail
 
-HOST="${HOST:-achat-hk}"
+HOST="${HOST:-paking-server}"          # 当前线上：国内 paking-server
 PORT="${PORT:-8800}"
-APPDIR="${APPDIR:-/opt/trip-agent}"
+APPDIR="${APPDIR:-/home/ubuntu/trip-agent}"
+DOCKER="${DOCKER:-sudo docker}"        # paking-server 的 ubuntu 用户需 sudo；root 机器设 DOCKER=docker
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 echo "==> [1/4] ensure app dir + env file on $HOST"
@@ -36,11 +37,13 @@ rsync -az --delete \
 
 echo "==> [3/4] build image + (re)start container on port $PORT"
 ssh "$HOST" "set -e; cd $APPDIR; \
-  docker build -t trip-agent . ; \
-  docker rm -f trip-agent 2>/dev/null || true ; \
-  docker run -d --name trip-agent --restart unless-stopped \
-    -p ${PORT}:8000 --env-file .env trip-agent ; \
-  sleep 4 ; docker ps --filter name=trip-agent --format '  {{.Names}}  {{.Status}}  {{.Ports}}'"
+  $DOCKER build -t trip-agent . ; \
+  $DOCKER rm -f trip-agent 2>/dev/null || true ; \
+  $DOCKER run -d --name trip-agent --restart unless-stopped \
+    -p ${PORT}:8000 --env-file .env \
+    -v ${APPDIR}/data:/app/data \
+    trip-agent ; \
+  sleep 4 ; $DOCKER ps --filter name=trip-agent --format '  {{.Names}}  {{.Status}}  {{.Ports}}'"
 
 echo "==> [4/4] health check"
 ssh "$HOST" "curl -sf http://127.0.0.1:${PORT}/health && echo '  <- OK' || echo '  (not ready, check: docker logs trip-agent)'"
