@@ -32,16 +32,36 @@ langgraph.json # LangGraph Server / Platform 入口 (-> agent/graph.py:make_grap
 ```bash
 uv sync
 cp .env.example .env           # 填入 VIVO_API_KEY 等
-uv run langgraph dev --allow-blocking   # 启动 LangGraph Server + Studio
+
+# 方式一：FastAPI HTTP 服务（提供 /api/chat，线上部署用的就是它）
+uv run --extra server uvicorn server:app --port 8000
+
+# 方式二：LangGraph Server + Studio（可视化调试多 Agent 图）
+uv run langgraph dev --allow-blocking
+
 uv run pytest -m "not integration"      # 离线测试
 ```
 
-## 部署到 LangGraph Platform（在线）
+## HTTP 接口（部署后对外提供）
 
-1. 把本仓库推到 GitHub
-2. LangSmith → **Deployments** → New → 选本仓库 + 分支，`langgraph.json` 在根目录
-3. 在部署设置里填环境变量（见下表）
-4. 部署完成后得到公网 URL `https://xxx.langgraph.app` + 云端 Studio
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/health` | 健康检查 → `{"status":"ok"}` |
+| POST | `/api/chat` | 旅行对话。请求 `{message, session_id?, context_guide?}` → 响应 `{session_id, reply, guide_json?}` |
+
+```bash
+curl -X POST http://<host>:8800/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"我想去成都玩3天"}'
+# → {"session_id":"...","reply":"...","guide_json":null}
+```
+
+> `guide_json` 在攻略规划完整时为结构化攻略（MIP `TravelGuideSchema`），规划中为 `null`。
+
+## 部署
+
+**自托管 Docker（当前线上用这个）**：在本机跑 `./deploy.sh`（rsync 上传 + 远程 `docker build`/`run`，监听 8800）。详见 `deploy.sh` 顶部说明。
+
+**LangGraph Platform（备选，云托管）**：LangSmith → Deployments → New → 选本仓库 + 分支（`langgraph.json` 在根目录）→ 填环境变量 → 得到 `https://xxx.langgraph.app` + 云端 Studio。
 
 ## 环境变量
 
