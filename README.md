@@ -72,6 +72,13 @@ curl -X POST http://<host>:8800/api/chat -H 'Content-Type: application/json' \
 | `VIVO_MODEL` | 否 | 默认 `Volc-DeepSeek-V3.2` |
 | `VIVO_REASONING_EFFORT` | 否 | 默认 `low` |
 | `LANGSMITH_API_KEY` | 否 | 链路追踪（Platform 上自动配置） |
+| `CHECKPOINT_DB` | 否 | 会话持久化 sqlite 路径，默认 `data/checkpoints.sqlite` |
+
+## 会话持久化
+
+FastAPI 路径用 **SqliteSaver** 把每个会话（`thread_id` = `session_id`）的对话持久化到 sqlite，**重启/重新部署都不丢上下文**。
+Docker 部署务必把 DB 目录挂成 volume（`deploy.sh` 已加 `-v .../data:/app/data`），否则容器重建会清掉容器内文件。
+（`langgraph dev` / LangGraph Platform 路径由平台自管持久化，`make_graph()` 不带 checkpointer。）
 
 ## 被其他项目引用的两种方式
 
