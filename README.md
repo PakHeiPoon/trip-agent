@@ -1,5 +1,10 @@
 # trip-agent ✈️
 
+![CI](https://github.com/PakHeiPoon/trip-agent/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![LangGraph](https://img.shields.io/badge/LangGraph-1.x-2ea44f)
+![vivo 蓝心](https://img.shields.io/badge/LLM-vivo%20蓝心-5468ff)
+
 觅途 (MustStart) 的旅行规划智能体 —— 基于 **LangGraph** 的 **1+N 多 Agent** 系统，跑在 **vivo 蓝心大模型** 上。
 
 这是「智能体的唯一源头」：既能部署到 **LangGraph Platform** 当在线服务，也能被其他项目当 **Python 包 / git submodule** 引入。
