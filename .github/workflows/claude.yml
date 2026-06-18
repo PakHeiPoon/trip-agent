@@ -36,6 +36,10 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
+          # Commit via the GitHub API so commits are attributed to the Claude
+          # app (claude[bot]) and marked Verified, instead of github-actions[bot].
+          use_commit_signing: true
+
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
             actions: read
