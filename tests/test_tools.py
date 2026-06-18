@@ -164,3 +164,68 @@ def test_traffic_in_specialist_tools():
     from agent.tools import SPECIALIST_TOOLS, get_traffic as t
     assert t in SPECIALIST_TOOLS["planner"]
     assert t in SPECIALIST_TOOLS["pricing"]
+
+
+# ---------------------------------------------------------------------------
+# jump_ota tests — pure URL construction, no HTTP calls needed
+# ---------------------------------------------------------------------------
+
+from agent.tools.booking import jump_ota as jump_ota_fn  # noqa: E402
+
+
+def test_jump_ota_flight():
+    out = jump_ota_fn.invoke({"origin": "北京", "destination": "上海", "date": "2026-08-01", "kind": "flight"})
+    assert "flights.ctrip.com" in out
+    assert "fliggy.com" in out
+    assert "北京" in out
+    assert "上海" in out
+    assert "2026-08-01" in out
+
+
+def test_jump_ota_train():
+    out = jump_ota_fn.invoke({"origin": "北京", "destination": "上海", "date": "2026-08-01", "kind": "train"})
+    assert "trains.ctrip.com" in out
+    assert "12306.cn" in out
+    assert "北京" in out
+    assert "上海" in out
+    assert "2026-08-01" in out
+
+
+def test_jump_ota_hotel():
+    out = jump_ota_fn.invoke({"destination": "三亚", "date": "2026-08-01", "kind": "hotel"})
+    assert "hotels.ctrip.com" in out
+    assert "fliggy.com" in out
+    assert "三亚" in out
+    assert "2026-08-01" in out
+
+
+def test_jump_ota_all():
+    out = jump_ota_fn.invoke({"origin": "成都", "destination": "北京", "date": "2026-09-10"})
+    assert "flights.ctrip.com" in out
+    assert "trains.ctrip.com" in out
+    assert "hotels.ctrip.com" in out
+    assert "成都" in out
+    assert "北京" in out
+    assert "2026-09-10" in out
+
+
+def test_jump_ota_no_destination():
+    out = jump_ota_fn.invoke({"origin": "北京", "destination": ""})
+    assert "目的地" in out
+
+
+def test_jump_ota_invalid_kind():
+    out = jump_ota_fn.invoke({"origin": "北京", "destination": "上海", "kind": "bus"})
+    assert "无效" in out
+
+
+def test_jump_ota_no_date():
+    out = jump_ota_fn.invoke({"origin": "北京", "destination": "上海", "kind": "flight"})
+    assert "flights.ctrip.com" in out
+    assert "depdate=" not in out
+
+
+def test_jump_ota_in_specialist_tools():
+    from agent.tools import SPECIALIST_TOOLS, jump_ota as t
+    assert t in SPECIALIST_TOOLS["planner"]
+    assert t in SPECIALIST_TOOLS["pricing"]
