@@ -32,3 +32,6 @@ class AgentState(TypedDict, total=False):
     plan: list[str]
     # Per-turn specialist outputs: [{"agent": id, "content": text}].
     findings: list[dict[str, Any]]
+    # Per-turn tool-call trace for UI visualization (技术亮点①):
+    # [{"agent": id, "tool": name, "args": {...}}]. Reset each turn.
+    tool_calls: list[dict[str, Any]]

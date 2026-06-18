@@ -74,16 +74,30 @@ def _supervisor(state: AgentState) -> dict:
         config={"run_name": "supervisor"},
     )
     chosen = [a for a in plan.agents if a in SPECIALISTS]
-    return {"plan": chosen, "findings": []}
+    return {"plan": chosen, "findings": [], "tool_calls": []}
 
 
 def _route(state: AgentState) -> Literal["experts", "finalize"]:
     return "experts" if state.get("plan") else "finalize"
 
 
-def _run_specialist(name: str, history: list, ask: HumanMessage) -> str:
-    """Run one specialist. Tool-enabled ones run as a ReAct agent (can call vivo
-    POI / weather); tool-less ones are a plain LLM call."""
+def _extract_tool_calls(name: str, messages: list) -> list[dict[str, Any]]:
+    """Pull the tools a specialist actually invoked (for UI visualization 技术亮点①)."""
+    calls: list[dict[str, Any]] = []
+    for m in messages:
+        for tc in getattr(m, "tool_calls", None) or []:
+            calls.append(
+                {"agent": name, "tool": tc.get("name", ""), "args": tc.get("args", {})}
+            )
+    return calls
+
+
+def _run_specialist(
+    name: str, history: list, ask: HumanMessage
+) -> tuple[str, list[dict[str, Any]]]:
+    """Run one specialist → (reply_text, tool_calls). Tool-enabled ones run as a
+    ReAct agent (vivo POI / weather / traffic / booking) and we record which tools
+    fired; tool-less ones are a plain LLM call (no tool calls)."""
     system = SPECIALIST_PROMPTS[name]
     tools = SPECIALIST_TOOLS.get(name, [])
     try:
@@ -94,15 +108,15 @@ def _run_specialist(name: str, history: list, ask: HumanMessage) -> str:
                 # cap the tool loop so a chatty react agent can't run away
                 config={"run_name": f"expert:{name}", "recursion_limit": 8},
             )
-            return _text(out["messages"][-1])
+            return _text(out["messages"][-1]), _extract_tool_calls(name, out["messages"])
 
         resp = get_llm(reasoning_effort="minimal").invoke(
             [SystemMessage(content=system), *history, ask],
             config={"run_name": f"expert:{name}"},
         )
-        return _text(resp)
+        return _text(resp), []
     except Exception as exc:  # noqa: BLE001 - degrade gracefully so finalize still answers
-        return f"（{name} 专家本轮未能给出建议：{type(exc).__name__}）"
+        return f"（{name} 专家本轮未能给出建议：{type(exc).__name__}）", []
 
 
 def _experts(state: AgentState) -> dict:
@@ -114,11 +128,13 @@ def _experts(state: AgentState) -> dict:
     # Sequential on purpose: vivo's free competition tier throttles concurrent
     # calls, so parallel experts end up SLOWER. Speed comes from reasoning_effort
     # "minimal" on routing/experts instead.
-    findings: list[dict[str, Any]] = [
-        {"agent": name, "content": _run_specialist(name, history, ask)}
-        for name in state.get("plan", [])
-    ]
-    return {"findings": findings}
+    findings: list[dict[str, Any]] = []
+    tool_calls: list[dict[str, Any]] = []
+    for name in state.get("plan", []):
+        content, calls = _run_specialist(name, history, ask)
+        findings.append({"agent": name, "content": content})
+        tool_calls.extend(calls)
+    return {"findings": findings, "tool_calls": tool_calls}
 
 
 def _finalize(state: AgentState) -> dict:
