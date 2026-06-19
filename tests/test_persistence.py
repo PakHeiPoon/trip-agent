@@ -17,9 +17,33 @@ class _FakeRouter:
         return self.schema(agents=[], reason="t")  # no specialists -> straight to finalize
 
 
+class _FakeBoundLLM:
+    """Mock for ``get_llm(...).bind_tools(...)``: the supervisor reads
+    ``resp.tool_calls`` for the forced ``select_experts`` routing call. Empty
+    ``agents`` -> no specialists -> straight to finalize (same as before)."""
+
+    def invoke(self, messages, config=None):
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "select_experts",
+                    "args": {"agents": [], "reason": "t"},
+                    "id": "call_route",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+
 class _FakeLLM:
+    # routing now goes through bind_tools(select_experts); with_structured_output
+    # is kept for any legacy callers but is no longer used by the supervisor.
     def with_structured_output(self, schema):
         return _FakeRouter(schema)
+
+    def bind_tools(self, tools, tool_choice=None):
+        return _FakeBoundLLM()
 
     def invoke(self, messages, config=None):
         return AIMessage(content="管家回复")
