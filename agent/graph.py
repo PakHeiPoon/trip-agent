@@ -19,11 +19,17 @@ Tools are mocked for 初赛 — specialists reason from the conversation. The
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any, Literal
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import create_react_agent
@@ -92,6 +98,19 @@ def _extract_tool_calls(name: str, messages: list) -> list[dict[str, Any]]:
     return calls
 
 
+def _tool_outputs(messages: list, tool_name: str) -> list[str]:
+    """Raw output strings of a given tool from a ReAct agent's message list.
+
+    The react agent's *final* message often summarizes tool output away, so to
+    keep jump_ota's real deep-links we read them from the ToolMessage directly.
+    """
+    return [
+        _text(m)
+        for m in messages
+        if isinstance(m, ToolMessage) and getattr(m, "name", "") == tool_name
+    ]
+
+
 def _run_specialist(
     name: str, history: list, ask: HumanMessage
 ) -> tuple[str, list[dict[str, Any]]]:
@@ -108,7 +127,13 @@ def _run_specialist(
                 # cap the tool loop so a chatty react agent can't run away
                 config={"run_name": f"expert:{name}", "recursion_limit": 8},
             )
-            return _text(out["messages"][-1]), _extract_tool_calls(name, out["messages"])
+            final = _text(out["messages"][-1])
+            # react agent 收尾常把 jump_ota 的链接 summarize 掉 → 把真实深链原样并回 finding，
+            # 这样 _finalize 能确定性地把它们附给用户。
+            for booking in _tool_outputs(out["messages"], "jump_ota"):
+                if booking and booking not in final:
+                    final = f"{final}\n\n{booking}"
+            return final, _extract_tool_calls(name, out["messages"])
 
         resp = get_llm(reasoning_effort="minimal").invoke(
             [SystemMessage(content=system), *history, ask],
@@ -137,6 +162,26 @@ def _experts(state: AgentState) -> dict:
     return {"findings": findings, "tool_calls": tool_calls}
 
 
+_BOOKING_LINK_RE = re.compile(
+    r"\[[^\]]+\]\((https?://[^)\s]*(?:ctrip\.com|fliggy\.com|12306\.cn)[^)\s]*)\)"
+)
+
+
+def _extract_booking_links(findings: list[dict[str, Any]]) -> list[str]:
+    """Pull the REAL jump_ota markdown booking links (携程/飞猪/12306) out of the
+    specialists' findings, deduped by URL — so we append the actual deep links
+    deterministically instead of trusting the finalize LLM (which sometimes
+    rewrites them to a homepage or fabricates a fake short link)."""
+    links: list[str] = []
+    seen: set[str] = set()
+    for f in findings:
+        for m in _BOOKING_LINK_RE.finditer(f.get("content", "") or ""):
+            if m.group(1) not in seen:
+                seen.add(m.group(1))
+                links.append(m.group(0))
+    return links
+
+
 def _finalize(state: AgentState) -> dict:
     """汇总：synthesize specialist findings into one 管家 reply (+ optional guide JSON)."""
     messages = [SystemMessage(content=build_finalizer_system()), *state["messages"]]
@@ -145,6 +190,20 @@ def _finalize(state: AgentState) -> dict:
         messages.append(SystemMessage(content=build_expert_context(findings)))
 
     resp = get_llm().invoke(messages, config={"run_name": "finalizer"})
+    text = _text(resp)
+
+    # 确定性补真实预订深链：以 jump_ota 在 findings 里给的为准，append 进回复
+    # （只补回复里还没出现的，避免重复；这样杜绝 LLM 改写成首页或编造假链接）。
+    booking = _extract_booking_links(findings)
+    if booking:
+        missing = [b for b in booking if b.split("](", 1)[-1].rstrip(")") not in text]
+        if missing:
+            text = (
+                text.rstrip()
+                + "\n\n**🔗 一键预订（出发地→目的地 直达）**\n"
+                + "\n".join(f"- {b}" for b in missing)
+            )
+            resp = AIMessage(content=text)
     return {"messages": [resp]}
 
 
