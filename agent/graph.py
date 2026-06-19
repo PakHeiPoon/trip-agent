@@ -30,6 +30,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.tools import tool
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import create_react_agent
@@ -72,14 +73,39 @@ def _text(message: Any) -> str:
     return str(content)
 
 
+@tool("select_experts")
+def _select_experts(agents: list[str], reason: str = "") -> str:
+    """选择本轮需要咨询的专家子集（路由）。
+
+    Args:
+        agents: 需要咨询的专家 id 列表，取值为 planner / pricing / contingency 的任意
+            子集；闲聊、问候或纯澄清类问题传空列表 []。
+        reason: 一句话路由理由。
+    """
+    return "ok"
+
+
 def _supervisor(state: AgentState) -> dict:
-    """总控：decide which specialists (if any) to consult this turn."""
-    router = get_llm(reasoning_effort="minimal").with_structured_output(RoutePlan)
-    plan: RoutePlan = router.invoke(
+    """总控：决定本轮咨询哪些专家。
+
+    用 ``bind_tools`` 让模型调用 ``select_experts`` 工具给出路由结果——这样对所有
+    vivo 模型都兼容，包括 **qwen3.5-plus**（它拒绝 with_structured_output / function
+    calling 的 response_format，但支持普通 tool calling）。拿不到有效 tool_call 时退化为
+    「不咨询专家」直接进 finalize（RoutePlan 仅作 schema 参考，已不再用于 invoke）。
+    """
+    router = get_llm(reasoning_effort="minimal").bind_tools(
+        [_select_experts], tool_choice="select_experts"
+    )
+    resp = router.invoke(
         [SystemMessage(content=SUPERVISOR_PROMPT), *state["messages"]],
         config={"run_name": "supervisor"},
     )
-    chosen = [a for a in plan.agents if a in SPECIALISTS]
+    chosen: list[str] = []
+    for call in getattr(resp, "tool_calls", None) or []:
+        if call.get("name") == "select_experts":
+            agents = call.get("args", {}).get("agents") or []
+            chosen = [a for a in agents if a in SPECIALISTS]
+            break
     return {"plan": chosen, "findings": [], "tool_calls": []}
 
 
