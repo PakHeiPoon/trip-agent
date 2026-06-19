@@ -93,7 +93,7 @@ def _supervisor(state: AgentState) -> dict:
     calling 的 response_format，但支持普通 tool calling）。拿不到有效 tool_call 时退化为
     「不咨询专家」直接进 finalize（RoutePlan 仅作 schema 参考，已不再用于 invoke）。
     """
-    router = get_llm(reasoning_effort="minimal").bind_tools(
+    router = get_llm(reasoning_effort="minimal", disable_thinking=True).bind_tools(
         [_select_experts], tool_choice="select_experts"
     )
     resp = router.invoke(
@@ -215,7 +215,9 @@ def _finalize(state: AgentState) -> dict:
     if findings:
         messages.append(SystemMessage(content=build_expert_context(findings)))
 
-    resp = get_llm().invoke(messages, config={"run_name": "finalizer"})
+    # finalize 关原生思考：展示用的思考过程由 prompt 的 [THINK]…[/THINK] 块承载（写进
+    # 正文 content 才能流式拿到），原生 reasoning_content 会被 langchain 丢弃，纯属浪费。
+    resp = get_llm(disable_thinking=True).invoke(messages, config={"run_name": "finalizer"})
     text = _text(resp)
 
     # 确定性补真实预订深链：以 jump_ota 在 findings 里给的为准，append 进回复

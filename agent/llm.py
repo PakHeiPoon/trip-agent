@@ -51,6 +51,7 @@ def get_llm(
     temperature: float = 0.7,
     max_tokens: int = 4096,
     reasoning_effort: str | None = None,
+    disable_thinking: bool = False,
 ) -> ChatOpenAI:
     """Build a ``ChatOpenAI`` bound to the vivo BlueLM endpoint.
 
@@ -60,6 +61,12 @@ def get_llm(
         reasoning_effort: One of minimal/low/medium/high. Defaults to the
             ``VIVO_REASONING_EFFORT`` env var, then ``"low"``. Use ``"high"`` for
             complex planning, ``"minimal"`` for quick intent classification.
+        disable_thinking: qwen-only. qwen 默认开原生思考，但 langchain-openai 在
+            **流式**里会丢弃 ``reasoning_content``（我们拿不到、没法展示），白白多跑一遍
+            隐藏思考、显著增加延迟。对**不需要原生思考**的节点传 ``True`` 关掉它：
+            finalize（思考过程改由 ``[THINK]…[/THINK]`` 块承载，写进正文 content 才能流式
+            展示）、supervisor（强制调用 route 工具，不靠思考）。专家 ReAct 节点**不要**关
+            ——它们要靠思考决定调哪个工具，关了就不调工具了。对非 qwen 模型此参数无效。
 
     Raises:
         VivoConfigError: If no API key is configured.
@@ -68,14 +75,22 @@ def get_llm(
     if effort not in _VALID_EFFORTS:
         effort = DEFAULT_REASONING_EFFORT
 
-    return ChatOpenAI(
-        model=os.getenv("VIVO_MODEL", DEFAULT_MODEL),
+    model = os.getenv("VIVO_MODEL", DEFAULT_MODEL)
+    kwargs: dict = dict(
+        model=model,
         base_url=os.getenv("VIVO_API_BASE_URL", DEFAULT_BASE_URL),
         api_key=_resolve_api_key(),
         temperature=temperature,
         max_tokens=max_tokens,
-        reasoning_effort=effort,
         # Bounded per-call latency so one slow vivo call can't stall the whole flow.
         timeout=float(os.getenv("VIVO_TIMEOUT", "45")),
         max_retries=int(os.getenv("VIVO_MAX_RETRIES", "1")),
     )
+
+    if "qwen" in model.lower() and disable_thinking:
+        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+    else:
+        # DeepSeek-V3.2 / qwen 专家：保留 reasoning_effort 档位（minimal/low/medium/high）。
+        kwargs["reasoning_effort"] = effort
+
+    return ChatOpenAI(**kwargs)
