@@ -18,11 +18,20 @@ START → supervisor(总控) ──无需专家──→ finalize(管家) → EN
 
 - **总控 supervisor**：用 `with_structured_output` 判断本轮调度哪些专家
 - **专家 Agent**（`create_react_agent`，可调真实工具）：
-  - `规划 planner` — 行程/路线（工具：`vivo_poi_search`、`get_weather`）
-  - `比价 pricing` — 预算/性价比
+  - `规划 planner` — 行程/路线（工具：`vivo_poi_search`、`get_weather`、`get_traffic`）
+  - `比价 pricing` — 预算/性价比 + 预订入口（工具：`get_traffic`、`jump_ota`）
   - `应急 contingency` — 天气突发改排（工具：`get_weather`）
-- **汇总 finalizer**：以"MustStart旅行管家"人格融合专家意见，按需输出 MIP 攻略 JSON
-- 工具：vivo POI(`/search/geo`) / vivo OCR(`/ocr/general_recognition`) / 天气(open-meteo)
+- **汇总 finalizer**：以"MustStart旅行管家"人格融合专家意见；先输出一段 `[THINK]…[/THINK]`
+  中文思考块（供前端渲染「思考过程」面板，对外 reply 会剥掉），再回复；按需输出 MIP 攻略
+  JSON，并**确定性补上**专家查到的真实预订深链（不让 LLM 自己编 URL）。
+- **工具一览**：
+  - `vivo_poi_search` — vivo 地理编码/POI（`/search/geo`）
+  - `vivo_ocr` — vivo 通用 OCR（`/ocr/general_recognition`，截图识别）
+  - `get_weather` — open-meteo 天气（免 key）
+  - `get_traffic` — open-meteo geocoding + OSRM 路由：两地驾车距离/时长（免 key）
+  - `jump_ota` — 生成携程/12306/飞猪 预订深链（出发地→目的地，markdown 可点）
+  - `save_to_calendar` — 行程导出 `.ics` 日历事件
+- 每轮专家调用的工具会记进 `state.tool_calls`，团队后端透传给 App 做**工具调用可视化**。
 
 ## 目录
 
